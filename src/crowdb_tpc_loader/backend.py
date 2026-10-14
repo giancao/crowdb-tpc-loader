@@ -10,6 +10,7 @@ import importlib.metadata
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from .errors import CompatibilityError, ExistingTablesError, LoadError
 from .models import Options, TableData
@@ -43,7 +44,17 @@ def data_location(table: Any, filename: str) -> str:
 
         provider = load_location_provider(table.location(), table.metadata.properties)
     try:
-        return remote_uri(provider.new_data_location(filename))
+        location = remote_uri(provider.new_data_location(filename))
+        base = table.location().rstrip("/")
+        if base.startswith("s3://iceberg/"):
+            relative = location.removeprefix(base + "/")
+            if (
+                not location.startswith(base + "/")
+                or not relative
+                or any(part in {"", ".", ".."} for part in unquote(urlsplit(relative).path).split("/"))
+            ):
+                raise CompatibilityError("Location provider returned a path outside the native table scope")
+        return location
     except CompatibilityError:
         raise
     except Exception as exc:

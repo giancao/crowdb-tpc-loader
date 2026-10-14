@@ -36,9 +36,19 @@ After all tables are committed and verified, local staging is removed unless `--
 
 For local Parquet only, use `crowdb-tpc-loader generate --benchmark tpch --sf 1 --output-dir ./tpch-sf1`.
 
-Normal load does not download uploaded files to recheck MD5, decode every row, or execute SQL. The server validates `Content-MD5` during upload. PyIceberg reads Parquet footers for registration and small manifest metadata for commit verification.
+Normal load does not download uploaded files to recheck MD5, decode every row, or execute SQL. The server validates the signed SHA-256 for native injection and `Content-MD5` for ordinary S3 upload. PyIceberg reads Parquet footers for registration and small manifest metadata for commit verification.
 
 ## Check the result
+
+When the catalog advertises native injection, the loader journals a UUIDv7
+upload URI, uploads a Parquet part within the advertised request limit, then
+journals the server's selected `s3://iceberg/<catalog>/<namespace>/<table>/f/v1/...parquet`
+URL before registering it with PyIceberg. Reports preserve `upload_uri` and use
+the selected URL as `remote_uri`; standard manifests contain that one URL.
+Retrying the upload identity selects the same file. Commit reconciliation never
+retries an ambiguous `add_files` operation. Location providers cannot escape
+the native table prefix.
+
 
 Run the read-only verifier from a checkout after loading:
 

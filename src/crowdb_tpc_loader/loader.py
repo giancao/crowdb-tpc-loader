@@ -136,7 +136,12 @@ def _load_one(
         )
         expected: dict[str, tuple[int, int]] = {}
         for index, (part, item) in enumerate(zip(data.parts, row["files"])):
-            uri = data_location(table, f"crowdb-tpc-{run_id}-{index:06d}.parquet")
+            filename = f"crowdb-tpc-{run_id}-{index:06d}.parquet"
+            from .native_upload import enabled, new_upload_id
+
+            if enabled(table):
+                filename = f"{name}/part-{index:06d}-{new_upload_id()}.parquet"
+            uri = data_location(table, filename)
             if uri in expected:
                 raise LoadError("Catalog location provider returned duplicate data file URIs")
             expected[uri] = (part.rows, part.size_bytes)
@@ -149,6 +154,15 @@ def _load_one(
             from .transfers import UploadResult
 
             if isinstance(checksum, UploadResult):
+                if checksum.location:
+                    from .util import remote_uri
+
+                    selected = remote_uri(checksum.location)
+                    if selected != uri and selected in expected:
+                        raise LoadError("Native injection returned a duplicate file location")
+                    expected[selected] = expected.pop(uri)
+                    item["upload_uri"] = uri
+                    item["remote_uri"] = selected
                 item["md5"] = checksum.md5
                 item["md5_duration_seconds"] = checksum.md5_seconds
                 item["transfer_duration_seconds"] = checksum.transfer_seconds
@@ -156,6 +170,7 @@ def _load_one(
                 item["md5"] = checksum
             item["upload_duration_seconds"] = round(time.monotonic() - uploaded_at, 3)
             item["state"] = "uploaded_unregistered"
+            checkpoint(row, None)
         row["status"] = "committing"
         for item in row["files"]:
             item["state"] = "commit_unknown"

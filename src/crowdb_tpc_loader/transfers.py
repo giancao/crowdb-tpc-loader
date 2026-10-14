@@ -20,6 +20,7 @@ class UploadResult:
     md5: str
     md5_seconds: float | None
     transfer_seconds: float
+    location: str | None = None
 
 
 def upload_part(
@@ -43,6 +44,13 @@ def upload_part(
     md5_seconds = None
     transfer_started = time.monotonic()
     try:
+        from .native_upload import enabled, upload
+
+        if enabled(table):
+            location, digest, hash_seconds, transfer_seconds = upload(
+                table.io.properties, uri, part.path, part.size_bytes, buffer_size, progress
+            )
+            return UploadResult(digest, hash_seconds, transfer_seconds, location)
         if (
             isinstance(table.io, PyArrowFileIO)
             and all(
@@ -96,13 +104,23 @@ def probe_fileio(
     probe_schema = pa.schema([pa.field("probe", pa.int64(), nullable=True)])
     pq.write_table(pa.Table.from_pydict({"probe": [1]}, schema=probe_schema), local)
     part = ParquetPart(local, 1, local.stat().st_size, probe_schema)
-    uri = data_location(probe_table, f"crowdb-tpc-probe-{report.data['run_id']}.parquet")
+    from .native_upload import enabled, new_upload_id
+
+    filename = f"crowdb-tpc-probe-{report.data['run_id']}.parquet"
+    if enabled(probe_table):
+        filename = f"crowdb-tpc-probe-{new_upload_id()}.parquet"
+    uri = data_location(probe_table, filename)
     record = {"uri": uri, "state": "upload_started", "uncommitted_stage": True}
     report.data["probes"].append(record)
     report.save()
     try:
         emit("FileIO preflight: write/import-conversion probe (no table commit)")
-        upload_part(probe_table, part, uri, buffer_size, emit)
+        uploaded = upload_part(probe_table, part, uri, buffer_size, emit)
+        if uploaded.location:
+            uri = uploaded.location
+            record["upload_uri"] = record["uri"]
+            record["uri"] = uri
+            report.save()
         backend.validate_import(probe_table, [uri])
         record["state"] = "verified"
     except Exception as exc:

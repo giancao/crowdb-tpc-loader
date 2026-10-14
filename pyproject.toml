@@ -21,6 +21,7 @@ classifiers = [
   "Topic :: Database",
 ]
 dependencies = [
+  "requests>=2.32,<3",
   "botocore>=1.40,<2",
   "pyarrow>=18,<24",
   "duckdb>=1.4,<1.6",

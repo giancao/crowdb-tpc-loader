@@ -128,6 +128,7 @@ def fake_backend():
             name = data.name
             table = SimpleNamespace(
                 metadata=SimpleNamespace(table_uuid=f"uuid-{name}", properties={}),
+                location=lambda: f"s3://unit-test/{name}",
                 location_provider=lambda: SimpleNamespace(
                     new_data_location=lambda filename: f"s3://unit-test/{name}/data/{filename}"
                 ),
