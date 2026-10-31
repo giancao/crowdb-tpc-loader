@@ -103,13 +103,17 @@ def upload_file(
     client=None,
     part_digests: list[str] | None = None,
     buffer_size: int = 8 * MIB,
+    create_only: bool = True,
 ) -> None:
-    """PUT files below 256 MiB; otherwise use 64-MiB-minimum logical parts."""
+    """PUT below 256 MiB; otherwise use 64-MiB-minimum logical parts.
+
+    Disabling create_only requires isolated, run-owned target keys.
+    """
     bucket, key = _bucket_key(uri)
     owned_client = client is None
     client = client or _client(properties)
     try:
-        _upload(client, bucket, key, path, size, progress, md5, part_digests, buffer_size)
+        _upload(client, bucket, key, path, size, progress, md5, part_digests, buffer_size, create_only)
     except ClientError as error:
         if error.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 412:
             raise FileExistsError("Unique target data URI unexpectedly already exists") from error
@@ -123,7 +127,7 @@ def _content_md5(digest: str) -> str:
     return base64.b64encode(bytes.fromhex(digest)).decode("ascii")
 
 
-def _upload(client, bucket, key, path, size, progress, md5, part_digests, buffer_size):
+def _upload(client, bucket, key, path, size, progress, md5, part_digests, buffer_size, create_only):
     if size < MULTIPART_THRESHOLD:
         with path.open("rb") as source:
             if md5 is None:
@@ -137,7 +141,7 @@ def _upload(client, bucket, key, path, size, progress, md5, part_digests, buffer
                 Body=source,
                 ContentLength=size,
                 ContentMD5=_content_md5(md5),
-                IfNoneMatch="*",
+                **({"IfNoneMatch": "*"} if create_only else {}),
             )
         progress(size)
         return
@@ -177,7 +181,7 @@ def _upload(client, bucket, key, path, size, progress, md5, part_digests, buffer
             Key=key,
             UploadId=upload_id,
             MultipartUpload={"Parts": parts},
-            IfNoneMatch="*",
+            **({"IfNoneMatch": "*"} if create_only else {}),
         )
     except BaseException:
         if upload_id is not None:

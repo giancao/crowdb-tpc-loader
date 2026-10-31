@@ -72,7 +72,7 @@ def build_parser(redactor: Redactor) -> SafeParser:
     parser = SafeParser(
         prog="crowdb-tpc-loader",
         redactor=redactor,
-        description="Generate TPC-H/TPC-DS Parquet and safely load durable Iceberg tables.",
+        description="Generate TPC Parquet or synthetic samples; load Iceberg, S3, or Dataset.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(
@@ -117,6 +117,11 @@ def build_parser(redactor: Redactor) -> SafeParser:
                 "--output-dir", type=Path, required=True, help="new or empty persistent directory"
             )
         else:
+            command.add_argument("--target", choices=("iceberg", "s3"), default="iceberg")
+            command.add_argument("--s3-endpoint", help="standalone S3 endpoint; defaults to S3_ENDPOINT")
+            command.add_argument("--s3-bucket", help="existing bucket for standalone S3 uploads")
+            command.add_argument("--s3-prefix", help="new, empty object prefix for standalone S3 uploads")
+            command.add_argument("--verify", action="store_true", help="read back standalone S3 files")
             command.add_argument("--catalog-uri", help="REST Catalog base URI; overrides ICEBERG_URI")
             command.add_argument(
                 "--token",
@@ -144,7 +149,7 @@ def build_parser(redactor: Redactor) -> SafeParser:
                 "--upload-workers",
                 type=positive_int,
                 default=8,
-                help="maximum concurrent Iceberg table writes (default: 8)",
+                help="maximum concurrent table uploads (default: 8)",
             )
             command.add_argument(
                 "--catalog-property",
@@ -156,6 +161,11 @@ def build_parser(redactor: Redactor) -> SafeParser:
             command.add_argument(
                 "--py-io-impl", help="deployment-specific Python FileIO implementation class"
             )
+    from .dataset_cli import add_dataset_parser
+
+    add_dataset_parser(
+        commands, functools.partial(SafeParser, redactor=redactor), positive_int, positive_timeout
+    )
     return parser
 
 
@@ -176,6 +186,16 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
     )
     if args.command == "generate":
         return Options(**common, output_dir=args.output_dir)
+    if args.upload_buffer_mib > 64:
+        raise ArgumentError("--upload-buffer-mib must be between 1 and 64")
+    if args.upload_workers > 24:
+        raise ArgumentError("--upload-workers must be between 1 and 24")
+    if args.target == "s3":
+        from .s3_options import standalone_options
+
+        return standalone_options(args, common, redactor)
+    if args.verify or args.s3_endpoint or args.s3_bucket or args.s3_prefix:
+        raise ArgumentError("S3 endpoint/bucket/prefix and --verify require --target s3")
     uri = args.catalog_uri if args.catalog_uri is not None else os.getenv("ICEBERG_URI")
     token = args.token if args.token is not None else os.getenv("ICEBERG_TOKEN")
     redactor.add(token)
@@ -239,7 +259,18 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
 
 
 def initial_redactor(argv: list[str]) -> Redactor:
-    redactor = Redactor([os.getenv("ICEBERG_TOKEN", "")])
+    redactor = Redactor(
+        [
+            os.getenv(name, "")
+            for name in (
+                "ICEBERG_TOKEN",
+                "DATASET_TOKEN",
+                "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY",
+                "AWS_SESSION_TOKEN",
+            )
+        ]
+    )
     for index, value in enumerate(argv):
         if value == "--token" and index + 1 < len(argv):
             redactor.add(argv[index + 1])
@@ -292,6 +323,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser(redactor)
     try:
         args = parser.parse_args(arguments)
+        if args.command == "dataset":
+            from .dataset_cli import run_dataset_cli
+
+            configure_logging(redactor)
+            return run_dataset_cli(args, redactor)
         options = to_options(args, redactor)
     except SystemExit as exc:
         return int(exc.code or 0)
@@ -311,7 +347,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ValueError, AttributeError):
         pass  # Embedded invocation in a non-main thread.
     try:
-        result = Runner(options, emit, redactor).run()
+        if options.target == "s3":
+            from .s3_target import S3Runner
+
+            result = S3Runner(options, emit, redactor).run()
+        else:
+            result = Runner(options, emit, redactor).run()
         if args.json:
             print(json.dumps(result.report, indent=2, ensure_ascii=False, allow_nan=False))
         else:

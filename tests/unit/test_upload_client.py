@@ -7,6 +7,8 @@ import hashlib
 from io import BytesIO
 from threading import Thread
 
+import pytest
+from botocore.exceptions import ClientError
 
 from crowdb_tpc_loader.upload_client import UploadClient
 
@@ -76,6 +78,43 @@ def test_one_client_concurrent_request_credentials_without_payload_preread():
             assert headers["X-Amz-Security-Token"] == f"table-token-{index}"
             assert headers["X-Amz-Content-SHA256"] == "UNSIGNED-PAYLOAD"
             assert body == bytes([index]) * 128_000
+    finally:
+        transport.close()
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_disabled_retries_preserve_one_uncertain_mutation():
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_PUT(self):
+            received.append(self.rfile.read(int(self.headers["Content-Length"])))
+            response = b"<Error><Code>InternalError</Code></Error>"
+            self.send_response(500)
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever)
+    thread.start()
+    transport = UploadClient(retry_attempts=0)
+    try:
+        client = transport.bind(
+            {
+                "s3.endpoint": f"http://127.0.0.1:{server.server_port}",
+                "s3.access-key-id": "test-key",
+                "s3.secret-access-key": "test-secret",
+            }
+        )
+        with pytest.raises(ClientError, match="InternalError"):
+            client.put_object(Bucket="bucket", Key="candidate", Body=b"one mutation")
+        assert received == [b"one mutation"]
     finally:
         transport.close()
         server.shutdown()

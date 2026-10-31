@@ -68,3 +68,9 @@ class Options:
     timeout: float = 60.0
     catalog_properties: dict[str, str] = field(default_factory=dict, repr=False)
     quiet: bool = False
+    target: str = "iceberg"
+    s3_endpoint: str | None = None
+    s3_bucket: str | None = None
+    s3_prefix: str | None = None
+    s3_properties: dict[str, str] = field(default_factory=dict, repr=False)
+    verify: bool = False

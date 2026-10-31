@@ -14,7 +14,7 @@ from botocore.session import get_session
 class UploadClient:
     """Construct before workers start; never mutate the shared client's signer."""
 
-    def __init__(self, timeout: float = 60, connections: int = 8):
+    def __init__(self, timeout: float = 60, connections: int = 8, *, retry_attempts: int = 3):
         self.context = local()
         self.client = get_session().create_client(
             "s3",
@@ -30,7 +30,7 @@ class UploadClient:
                 response_checksum_validation="when_required",
                 connect_timeout=timeout,
                 read_timeout=timeout,
-                retries={"mode": "standard", "max_attempts": 3},
+                retries={"mode": "standard", "max_attempts": retry_attempts},
             ),
         )
         self.client.meta.events.register("before-call.s3", self._endpoint)

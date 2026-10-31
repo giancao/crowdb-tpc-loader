@@ -1,5 +1,7 @@
 # Testing
 
+The standalone S3 and Dataset targets additionally need a fresh real service acceptance run. Use `load --target s3 ... --verify`, and `dataset generate`, `dataset load --verify`, then `dataset verify <report>`. Include a Dataset payload larger than the selected `--part-size`. Preserve exact commands, source/server identity, reports, sample/object counts and checksums. Dataset HTTP tests cover real local request handling, multipart integrity, complete-but-unpublished candidates, lost Publish replies and truncated streams; they do not substitute for a real storage server.
+
 CI runs `ruff check src tests scripts`, `ruff format --check src tests scripts`, and `python -m pytest` on Python 3.10, 3.11, and 3.12. It builds and checks the wheel and sdist on Python 3.12. The default tests include unit and local PyArrow/PyIceberg integration tests. Real generators and a CROWDB instance are opt-in.
 
 ## Local checks

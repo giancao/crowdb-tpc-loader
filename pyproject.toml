@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "crowdb-tpc-loader"
 version = "0.1.1"
-description = "Generate and safely load TPC-H and TPC-DS Parquet datasets into an Iceberg REST catalog"
+description = "Generate TPC Parquet and synthetic samples for Iceberg, S3 and CROWDB Dataset injection"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = "Apache-2.0"

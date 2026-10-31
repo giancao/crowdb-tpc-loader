@@ -1,5 +1,9 @@
 # Failure recovery: determine commit status before handling files
 
+For standalone S3, retain the report, run-directory owner marker and per-object states. `requested_s3_prefix` is the supplied prefix; `s3_prefix` adds the unique run ID. A lost upload response can leave a stored object without a confirmed report entry. The tool neither reuses that run directory nor removes partial uploads. Ordinary PUT and multipart publication avoid unsupported conditional headers. The final S3 inventory is written only after every file succeeds; it is not an atomic transaction over the bucket.
+
+For Dataset, retain the immutable Dataset ID, operation ID, snapshot ID and upload IDs. Prepare can return a complete resource with `state=published` and `is_latest=false`; this does not prove latest advanced. A lost Publish reply is reconciled through a read-only status observation without replaying Publish. If the outcome remains unknown, local data and the report remain. `dataset verify <report>` checks immutable bytes and reports current `is_latest`; it never retries publication or claims to prove a historical head update. No automatic remote rollback or delete is performed.
+
 The tool does not provide automatic resume, overwrite, drop, purge, or remote garbage collection. There is no atomic transaction across all 8 or 24 tables. With concurrent table writes, each table uploads its files and commits one snapshot independently. An upload or commit failure in one table does not roll back successful snapshots in other tables.
 
 ## Reports and directories

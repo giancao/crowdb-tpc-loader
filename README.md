@@ -1,6 +1,6 @@
 # CrowDB TPC Loader
 
-Generate TPC-H or TPC-DS Parquet, upload it to CROWDB Iceberg, and register complete tables through the REST Catalog. The loader creates 8 TPC-H or 24 TPC-DS tables. It does not run benchmark SQL queries or claim TPC certification.
+Generate TPC-H or TPC-DS Parquet for Iceberg or standalone S3, and generate synthetic samples for CROWDB Dataset. Iceberg loading creates 8 TPC-H or 24 TPC-DS tables. Synthetic Dataset samples are separate test data. The tool does not run benchmark SQL queries or claim TPC certification.
 
 - Repository: [buzzcrow/crowdb-tpc-loader](https://github.com/buzzcrow/crowdb-tpc-loader)
 - End-to-end guide: [CROWDB TPC loader documentation](https://crowdb.dev/docs/tpc-loader/)
@@ -40,6 +40,39 @@ Normal load does not download uploaded files to recheck MD5, decode every row, o
 
 ## Check the result
 
+### Standalone S3 injection
+
+The new S3 and Dataset commands require a checkout containing these commands; they have not been released to PyPI. Install that checkout as described above and check `--help`.
+
+Use an existing bucket, a new empty prefix, `S3_ENDPOINT`, and private `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` environment values. `AWS_REGION` and `AWS_SESSION_TOKEN` are optional. No Iceberg catalog is required:
+
+```sh
+crowdb-tpc-loader load --target s3 --benchmark tpch --sf 0.01 \
+  --s3-bucket test-data --s3-prefix run-001/tpch --verify \
+  --report-file ./s3-run-001.json
+```
+
+All TPC data is generated and validated before uploading files. Each run writes beneath `<prefix>/<run-id>/`, recorded as `s3_prefix` in its report, so independent runs use distinct keys. This path uses ordinary PUT and multipart publication because CROWDB does not support conditional publication headers. Files and a final inventory remain in S3; no Iceberg tables are created. `--verify` explicitly streams every object back and checks its length and MD5. Omit it for ordinary uploads that rely on server checksum validation. Failed or uncertain runs retain staging and their object states; they are never automatically retried or overwritten by a later run.
+
+### Synthetic Dataset injection
+
+Generate reproducible binary payloads with inline label/text fields. The same seed, count and size produce the same sample IDs and bytes. Supply private `DATASET_TOKEN` and the service's `DATASET_URI`; the default namespace is `dataset-ns`.
+
+```sh
+crowdb-tpc-loader dataset generate --samples 128 --payload-bytes 131073 \
+  --seed 42 --output-dir ./synthetic-data
+crowdb-tpc-loader dataset load --input-dir ./synthetic-data \
+  --name dataset_run_001 --part-size 65536 --verify \
+  --report-file ./dataset-run-001.json
+crowdb-tpc-loader dataset verify ./dataset-run-001.json
+```
+
+For generate-and-load in one command, replace `--input-dir` with `--samples`, `--payload-bytes` and `--seed`. Use a fresh Dataset name. The current generator accepts 1–10000 samples; each payload must fit at most 10000 upload parts, with each part at most 4 MiB. Generation validates every local payload before remote creation. `--upload-workers` selects 1–8 concurrent payload uploads; the default part size is 1 MiB.
+
+Loading journals upload/publication identities, prepares a complete immutable snapshot, then advances latest. Full `--verify` checks every inline field and payload through bounded binary reads. The read-only `dataset verify` command can use `--dataset-uri` to check another cluster endpoint. It reports the snapshot bytes and current `is_latest` observation; successful candidate readback alone does not establish that an uncertain publication advanced latest. User-provided input directories are never removed.
+
+### Iceberg verification
+
 When the catalog advertises native injection, the loader journals a UUIDv7
 upload URI, uploads a Parquet part within the advertised request limit, then
 journals the server's selected `s3://iceberg/<catalog>/<namespace>/<table>/f/v1/...parquet`
@@ -48,7 +81,6 @@ the selected URL as `remote_uri`; standard manifests contain that one URL.
 Retrying the upload identity selects the same file. Commit reconciliation never
 retries an ambiguous `add_files` operation. Location providers cannot escape
 the native table prefix.
-
 
 Run the read-only verifier from a checkout after loading:
 

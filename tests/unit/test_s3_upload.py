@@ -55,7 +55,8 @@ def test_direct_put_below_256_mib(monkeypatch, tmp_path):
     assert progress == [100 * s3_upload.MIB]
 
 
-def test_multipart_parts_align_and_meet_64_mib_minimum(monkeypatch, tmp_path):
+@pytest.mark.parametrize("create_only", [True, False])
+def test_multipart_parts_align_and_meet_64_mib_minimum(monkeypatch, tmp_path, create_only):
     client = FakeS3()
     monkeypatch.setattr(s3_upload, "_client", lambda _properties: client)
     path = tmp_path / "large.parquet"
@@ -72,12 +73,16 @@ def test_multipart_parts_align_and_meet_64_mib_minimum(monkeypatch, tmp_path):
         progress.append,
         md5=digest,
         part_digests=part_digests,
+        create_only=create_only,
     )
     assert len(client.parts) == 4
     assert sum(client.parts) == path.stat().st_size
     assert all(size >= 64 * s3_upload.MIB for size in client.parts[:-1])
     assert all(size % s3_upload.FRAME_PAYLOAD_BYTES == 0 for size in client.parts[:-1])
-    assert client.completed["IfNoneMatch"] == "*"
+    if create_only:
+        assert client.completed["IfNoneMatch"] == "*"
+    else:
+        assert "IfNoneMatch" not in client.completed
     assert len(client.completed["MultipartUpload"]["Parts"]) == 4
     assert progress[-1] == path.stat().st_size
 

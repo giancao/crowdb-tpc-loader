@@ -133,8 +133,16 @@ class RunReport:
         for name, row in tables.items():
             for part in row["files"]:
                 uri = part.get("remote_uri")
-                if uri and part["state"] not in {"registered", "local"}:
-                    key = "uncertain_uploads" if part["state"] == "commit_unknown" else "unregistered_uploads"
+                complete = (
+                    {"stored", "verified", "local"}
+                    if self.data.get("target") == "s3"
+                    else {"registered", "local"}
+                )
+                if uri and part["state"] not in complete:
+                    uncertain = part["state"] == "commit_unknown" or (
+                        self.data.get("target") == "s3" and part["state"] == "upload_started"
+                    )
+                    key = "uncertain_uploads" if uncertain else "unregistered_uploads"
                     result[key].append({"table": name, "uri": uri, "state": part["state"]})
         result["probe_cleanup_candidates"] = [p for p in self.data["probes"] if p["state"] != "deleted"]
         return result
