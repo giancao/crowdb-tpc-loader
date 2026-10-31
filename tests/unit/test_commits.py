@@ -43,7 +43,8 @@ def test_success_journal_and_remote_uris(report, make_data, fake_backend, tmp_pa
         item = report.table(table.name()[-1])["files"][0]
         assert item["remote_uri"] == uri and item["state"] == "upload_started"
         assert uri.startswith("s3://unit-test/")
-        assert "unit-test-run" in uri
+        name = table.name()[-1]
+        assert f"/{name}/data/{name}/part-000000.parquet" in uri
         assert "upload_started" in report.paths[0].read_text()
         return "verified-test-digest"
 

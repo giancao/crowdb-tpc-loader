@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crowdb-tpc-loader"
-version = "0.1.1"
+version = "0.1.2"
 description = "Generate TPC Parquet and synthetic samples for Iceberg, S3 and CROWDB Dataset injection"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -21,8 +21,8 @@ classifiers = [
   "Topic :: Database",
 ]
 dependencies = [
-  "requests>=2.32,<3",
   "botocore>=1.40,<2",
+  "requests>=2.32,<3",
   "pyarrow>=18,<24",
   "duckdb>=1.4,<1.6",
   "pyiceberg[pyarrow]>=0.10,<0.11",

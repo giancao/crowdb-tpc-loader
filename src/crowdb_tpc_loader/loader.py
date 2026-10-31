@@ -136,7 +136,12 @@ def _load_one(
         )
         expected: dict[str, tuple[int, int]] = {}
         for index, (part, item) in enumerate(zip(data.parts, row["files"])):
-            filename = f"crowdb-tpc-{run_id}-{index:06d}.parquet"
+            # Keep data files discoverable beneath the table location.  The
+            # catalog's location provider may add its own ``data/`` component,
+            # so the table name is the first component we control.  Snapshot
+            # IDs are deliberately absent: a data file can be referenced by
+            # more than one snapshot and the ID is not known until commit.
+            filename = f"{name}/part-{index:06d}.parquet"
             from .native_upload import enabled, new_upload_id
 
             if enabled(table):

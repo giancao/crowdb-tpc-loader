@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Place new table data below a readable table path and use the catalog warehouse/namespace/table location when advertised.
+- Keep Parquet object names stable without embedding the loader run ID; retain the run ID in recovery and snapshot metadata.
+
 ## 0.1.1
 
 - Share one S3 upload client and up to eight connections across tables, retaining request-local credentials.
