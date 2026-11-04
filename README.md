@@ -38,6 +38,8 @@ For local Parquet only, use `crowdb-tpc-loader generate --benchmark tpch --sf 1 
 
 Normal load does not download uploaded files to recheck MD5, decode every row, or execute SQL. The server validates the signed SHA-256 for native injection and `Content-MD5` for ordinary S3 upload. PyIceberg reads Parquet footers for registration and small manifest metadata for commit verification.
 
+The native CrowDB FileIO refreshes expiring table credentials through the catalog's authenticated refresh endpoint. Open readers and Arrow scans can cross a credential window without reloading the table. Refresh preserves the object position and table scope; a rejected refresh stops the read. This does not retry uploads or uncertain commits.
+
 Uploaded Parquet names are scoped below the catalog-provided table location as `<table>/part-<index>.parquet` (the catalog may add its standard `data/` component). The run ID remains in the report, table properties, and snapshot properties for recovery and audit; it is not part of the object name. Iceberg metadata such as `metadata/*.avro` remains under the catalog's table location; those names and locations are assigned by the catalog. Data files do not include a snapshot ID because one file may be referenced by multiple snapshots and the ID is only known after commit.
 
 ## Check the result

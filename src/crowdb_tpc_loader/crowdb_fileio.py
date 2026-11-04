@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from pyiceberg.io.pyarrow import BUFFER_SIZE, ONE_MEGABYTE, PyArrowFile, PyArrowFileIO
 
+from .file_credentials import EXPIRY, REFRESH, FileCredentials
+from .scan_lifecycle import install_scan_lifecycle
+
 
 class CrowdbFile(PyArrowFile):
     def exists(self) -> bool:
@@ -24,6 +27,15 @@ class CrowdbFile(PyArrowFile):
 
 
 class CrowdbFileIO(PyArrowFileIO):
+    def _initialize_fs(self, scheme, netloc=None):
+        if scheme in {"s3", "s3a", "s3n"} and REFRESH in self.properties and EXPIRY in self.properties:
+            from pyarrow.fs import PyFileSystem
+
+            from .file_filesystem import CredentialFilesystem
+
+            return PyFileSystem(CredentialFilesystem(FileCredentials(self.properties, netloc)))
+        return super()._initialize_fs(scheme, netloc)
+
     def _file(self, location: str) -> CrowdbFile:
         scheme, netloc, path = self.parse_location(location, self.properties)
         return CrowdbFile(
@@ -38,3 +50,6 @@ class CrowdbFileIO(PyArrowFileIO):
 
     def new_output(self, location: str) -> CrowdbFile:
         return self._file(location)
+
+
+install_scan_lifecycle(CrowdbFileIO)

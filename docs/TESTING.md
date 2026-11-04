@@ -40,4 +40,8 @@ For an SF=1 remote run, use `python scripts/smoke_test.py --benchmark tpch --sf 
 
 ## Upload acceptance versus normal load
 
+Credential refresh tests use real Arrow S3 requests against a local HTTP server with an expiring grant. They cover an already open stream, Arrow dataset scanning, process serialization, rejected refreshes and scope checks. Remote refresh acceptance must also keep one stream open beyond the server's original credential TTL, then seek and read the same immutable object without reloading the table. Keep the original request deadlines and record client source, table identity and expiry; a changed clock or longer server TTL is not remote acceptance.
+
+Scan lifecycle regressions exercise a real limited Iceberg scan and an injected scan failure, checking that the native batch reader closes before its input file. Fresh container acceptance includes verifier process exit and a full bidirectional SQL comparison for all eight SF1 tables.
+
 Remote checksum reads, `--full-read` decoding and DuckDB SQL queries are independent opt-in acceptance checks. They are not part of normal load. Use controlled SF=1 datasets for these checks; do not automatically reread large user uploads. Normal S3 load relies on server validation of Content-MD5, reads Parquet footers for registration and verifies the committed manifest inventory.

@@ -32,6 +32,10 @@ This release creates benchmark tables only after validating the entire Parquet d
 
 A reachable REST endpoint does not prove that storage is writable. Check whether the returned storage address is reachable from the client, whether authentication needs a separate token, whether the correct FileIO was selected, and whether the HTTP service supports the required operations. Preflight uses an uncommitted staged table and does not fall back to a local path.
 
+Native FileIO refreshes table credentials before expiration, including during an open read. If credential refresh is rejected, check the catalog bearer token, table authorization and catalog readiness. The reader does not fall back to expired credentials or replay writes. Preserve the failure report; refreshing credentials does not resolve an uncertain commit.
+
+Limited Iceberg scans close the native Arrow reader before its input file, including when scanning fails. If verification crashes or hangs during process exit, keep the stderr and native stack; successful row checks alone do not establish a successful verification run.
+
 ### Some tables succeed and a later table fails
 
 First run the independent verifier on tables marked `succeeded` in the report. The failed table may exist but be empty, or it may have a committed or uncertain snapshot. A default rerun stops on existing tables as a protective measure.
