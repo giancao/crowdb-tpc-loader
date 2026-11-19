@@ -34,13 +34,13 @@ Each table's files are registered in one snapshot. Required recovery records are
 
 After all tables are committed and verified, local staging is removed unless `--keep-files` is set. Failed and uncertain runs retain local files. Reports contain `md5`, `md5_duration_seconds`, `transfer_duration_seconds`, and the combined `upload_duration_seconds`. For non-S3 FileIO the checksum is calculated inline while copying, and separate checksum time is unavailable. Performance checks use SF=1; record generation, transfer and commit time separately.
 
-TPC-H writes one file per large table for every 10 scale-factor units. If a file exceeds the catalog's upload size or time limit, split it further with `--parts N`.
+TPC-H writes one file per large table for every 10 scale-factor units; `--parts N` chooses another count.
 
 To test readers of merge-on-read deletes, add `--delete-fraction 0.1` to a load. Each table then gets a second snapshot with one delete file per data file. `--delete-mode position` (default) deletes every Nth row by file position; `--delete-mode equality` deletes every Nth row by its primary key (TPC-H only). `--delete-tables orders,lineitem` limits it to some tables. Tables are format-version 2; deletion vectors are not written because PyIceberg cannot write format-version 3. The delete commit is never retried.
 
 For local Parquet only, use `crowdb-tpc-loader generate --benchmark tpch --sf 1 --output-dir ./tpch-sf1`.
 
-Normal load does not download uploaded files to recheck MD5, decode every row, or execute SQL. The server validates the signed SHA-256 for native injection and `Content-MD5` for ordinary S3 upload. PyIceberg reads Parquet footers for registration and small manifest metadata for commit verification.
+Normal load does not download uploaded files to recheck MD5, decode every row, or execute SQL. The server validates `Content-MD5` for each S3 upload. PyIceberg reads Parquet footers for registration and small manifest metadata for commit verification.
 
 The native CrowDB FileIO refreshes expiring table credentials through the catalog's authenticated refresh endpoint. Open readers and Arrow scans can cross a credential window without reloading the table. Refresh preserves the object position and table scope; a rejected refresh stops the read. This does not retry uploads or uncertain commits.
 
@@ -81,12 +81,9 @@ Loading journals upload/publication identities, prepares a complete immutable sn
 
 ### Iceberg verification
 
-When the catalog advertises native injection, the loader journals a UUIDv7
-upload URI, uploads a Parquet part within the advertised request limit, then
-journals the server's selected `s3://iceberg/<catalog>/<namespace>/<table>/f/v1/...parquet`
-URL before registering it with PyIceberg. Reports preserve `upload_uri` and use
-the selected URL as `remote_uri`; standard manifests contain that one URL.
-Retrying the upload identity selects the same file. Commit reconciliation never
+The loader journals each data file's S3 URI before uploading it and registers
+the uploaded files with PyIceberg; standard manifests contain those URIs.
+Commit reconciliation never
 retries an ambiguous `add_files` operation. Location providers cannot escape
 the native table prefix.
 

@@ -105,8 +105,7 @@ def build_parser(redactor: Redactor) -> SafeParser:
         command.add_argument(
             "--parts",
             type=positive_int,
-            help="TPC-H files per large table (default: one per 10 scale-factor units); raise it "
-            "when a file exceeds the catalog's upload size or time limit",
+            help="TPC-H files per large table (default: one per 10 scale-factor units)",
         )
         command.add_argument(
             "--timeout",

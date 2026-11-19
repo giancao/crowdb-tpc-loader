@@ -11,8 +11,8 @@ OpenAPI in the sibling CROWDB checkout. Synthetic samples are not a TPC benchmar
 ## Scope and compatibility
 
 - Existing `generate/load --benchmark tpch|tpcds` commands keep their behavior.
-  Iceberg remains the default load target: catalog-advertised native injection
-  or S3/FileIO upload, followed by snapshot registration.
+  Iceberg remains the default load target: S3/FileIO upload, followed by
+  snapshot registration.
 - Add `load --target s3` for fully validated TPC Parquet in a fresh bucket/prefix,
   without requiring an Iceberg catalog or creating tables. Reuse bounded
   streaming and checksums. Use a UUID-owned child directory below the requested

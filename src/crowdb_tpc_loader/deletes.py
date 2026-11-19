@@ -84,9 +84,6 @@ def add_deletes(
     from pyiceberg.table.update.snapshot import _FastAppendFiles
     from pyiceberg.typedef import Record
 
-    from .native_upload import enabled, new_upload_id
-    from .transfers import UploadResult
-
     every = max(1, round(1 / fraction))
     content = DataFileContent.POSITION_DELETES if mode == "position" else DataFileContent.EQUALITY_DELETES
     journal = row.setdefault("delete_files", [])
@@ -97,10 +94,7 @@ def add_deletes(
         deletes, equality_ids = _delete_table(pa, pq, table, data.name, part, uri, mode, every)
         local = part.path.with_name(f"{part.path.stem}.{mode}-deletes.parquet")
         pq.write_table(deletes, local)
-        name = f"{data.name}/delete-{index:06d}"
-        remote = data_location(
-            table, f"{name}-{new_upload_id()}.parquet" if enabled(table) else f"{name}.parquet"
-        )
+        remote = data_location(table, f"{data.name}/delete-{index:06d}.parquet")
         item = {"remote_uri": remote, "mode": mode, "row_count": deletes.num_rows, "state": "upload_started"}
         journal.append(item)
         checkpoint(row, None)  # Persist the URI before touching remote storage.
@@ -108,11 +102,7 @@ def add_deletes(
             f"Upload {data.name}: {mode} delete file {index + 1}/{len(data.parts)}, {deletes.num_rows:,} rows"
         )
         size = local.stat().st_size
-        result = uploader(
-            table, ParquetPart(local, deletes.num_rows, size, deletes.schema), remote, buffer_size, emit
-        )
-        if isinstance(result, UploadResult) and result.location:
-            item["upload_uri"], item["remote_uri"] = remote, result.location
+        uploader(table, ParquetPart(local, deletes.num_rows, size, deletes.schema), remote, buffer_size, emit)
         item["state"] = "uploaded_unregistered"
         files.append(
             DataFile.from_args(

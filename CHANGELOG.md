@@ -2,6 +2,7 @@
 
 ## 0.1.4
 
+- Remove CrowDB native injection uploads. Data files always use the standard S3 upload path and keep the URI the loader chose; reports no longer carry `upload_uri`.
 - Add `--parts` to choose how many files TPC-H writes per large table.
 - Add `--delete-fraction`, `--delete-mode position|equality` and `--delete-tables` to `load`: write merge-on-read delete files in a second snapshot.
 
