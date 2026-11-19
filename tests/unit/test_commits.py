@@ -70,46 +70,6 @@ def test_pyiceberg_definite_rejections_match_installed_exception_types():
     assert not IcebergBackend.definite_rejection(TimeoutError("unknown"))
 
 
-def test_native_selected_location_is_journaled_before_registration(report, make_data, fake_backend, tmp_path):
-    import json
-
-    from crowdb_tpc_loader.transfers import UploadResult
-
-    data = make_data()
-    seed(report, data, tmp_path)
-    selected = "s3://iceberg/catalog/namespace/table/f/v1/part.locator.parquet"
-    provisional = []
-    saved_states = []
-    save = report.save
-
-    def capture_save():
-        save()
-        row = json.loads(report.paths[0].read_text())["tables"]["region"]
-        for item in row["files"]:
-            saved_states.append((item.get("remote_uri"), item.get("state")))
-
-    report.save = capture_save
-
-    def upload(table, part, uri, buffer, emit):
-        provisional.append(uri)
-        return UploadResult("digest", 0.1, 0.2, selected)
-
-    register = fake_backend.register
-
-    def checked_register(table, uris, run_id):
-        item = report.table("region")["files"][0]
-        assert uris == [selected]
-        assert item["remote_uri"] == selected
-        assert item["upload_uri"] == provisional[0]
-        assert selected in report.paths[0].read_text()
-        assert (selected, "uploaded_unregistered") in saved_states
-        register(table, uris, run_id)
-
-    fake_backend.register = checked_register
-    run(report, data, fake_backend, upload)
-    assert report.table("region")["status"] == "succeeded"
-
-
 def test_timeout_after_commit_reconciles_no_retry(report, make_data, fake_backend, tmp_path):
     data = make_data()
     seed(report, data, tmp_path)

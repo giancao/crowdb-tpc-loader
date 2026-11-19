@@ -63,6 +63,7 @@ class Options:
     no_download: bool = False
     memory_limit: str = "1GB"
     threads: int = 2
+    parts: int | None = None
     upload_buffer_mib: int = 8
     upload_workers: int = 8
     timeout: float = 60.0
@@ -74,3 +75,6 @@ class Options:
     s3_prefix: str | None = None
     s3_properties: dict[str, str] = field(default_factory=dict, repr=False)
     verify: bool = False
+    delete_fraction: float = 0.0
+    delete_mode: str = "position"
+    delete_tables: tuple[str, ...] = ()

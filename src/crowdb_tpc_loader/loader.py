@@ -141,12 +141,7 @@ def _load_one(
             # so the table name is the first component we control.  Snapshot
             # IDs are deliberately absent: a data file can be referenced by
             # more than one snapshot and the ID is not known until commit.
-            filename = f"{name}/part-{index:06d}.parquet"
-            from .native_upload import enabled, new_upload_id
-
-            if enabled(table):
-                filename = f"{name}/part-{index:06d}-{new_upload_id()}.parquet"
-            uri = data_location(table, filename)
+            uri = data_location(table, f"{name}/part-{index:06d}.parquet")
             if uri in expected:
                 raise LoadError("Catalog location provider returned duplicate data file URIs")
             expected[uri] = (part.rows, part.size_bytes)
@@ -159,15 +154,6 @@ def _load_one(
             from .transfers import UploadResult
 
             if isinstance(checksum, UploadResult):
-                if checksum.location:
-                    from .util import remote_uri
-
-                    selected = remote_uri(checksum.location)
-                    if selected != uri and selected in expected:
-                        raise LoadError("Native injection returned a duplicate file location")
-                    expected[selected] = expected.pop(uri)
-                    item["upload_uri"] = uri
-                    item["remote_uri"] = selected
                 item["md5"] = checksum.md5
                 item["md5_duration_seconds"] = checksum.md5_seconds
                 item["transfer_duration_seconds"] = checksum.transfer_seconds
@@ -187,6 +173,24 @@ def _load_one(
         except Exception as exc:
             error = exc
         state = reconcile(backend, table, expected, row, checkpoint, error, emit)
+        options = getattr(backend, "options", None)
+        fraction = getattr(options, "delete_fraction", 0.0)
+        if fraction and (not options.delete_tables or name in options.delete_tables):
+            from .deletes import add_deletes
+
+            add_deletes(
+                table,
+                data,
+                list(expected),
+                options.delete_mode,
+                fraction,
+                run_id,
+                row,
+                checkpoint,
+                uploader,
+                buffer_size,
+                emit,
+            )
         row.update(
             status="succeeded",
             snapshot_id=state.snapshot_id,

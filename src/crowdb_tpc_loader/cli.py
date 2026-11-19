@@ -103,6 +103,11 @@ def build_parser(redactor: Redactor) -> SafeParser:
             "--threads", type=positive_int, default=2, help="native generator threads (default: 2)"
         )
         command.add_argument(
+            "--parts",
+            type=positive_int,
+            help="TPC-H files per large table (default: one per 10 scale-factor units)",
+        )
+        command.add_argument(
             "--timeout",
             type=positive_timeout,
             default=60.0,
@@ -131,6 +136,25 @@ def build_parser(redactor: Redactor) -> SafeParser:
                 "--namespace", help="namespace (default: benchmark); dots separate namespace levels"
             )
             command.add_argument("--on-exists", choices=("error", "skip"), default="error")
+            command.add_argument(
+                "--delete-fraction",
+                type=float,
+                default=0.0,
+                help="after loading, delete about this fraction of each table's rows with "
+                "merge-on-read delete files in a second snapshot (0 < F < 1; default: no deletes)",
+            )
+            command.add_argument(
+                "--delete-mode",
+                choices=("position", "equality"),
+                default="position",
+                help="position: delete every Nth row by file position; equality: delete every Nth "
+                "row by its primary key, TPC-H only (default: position)",
+            )
+            command.add_argument(
+                "--delete-tables",
+                default="",
+                help="comma-separated tables that get delete files (default: all tables)",
+            )
             command.add_argument(
                 "--work-dir",
                 type=Path,
@@ -172,6 +196,8 @@ def build_parser(redactor: Redactor) -> SafeParser:
 def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
     if not re.fullmatch(r"[1-9][0-9]*(?:\.[0-9]+)?(?:KB|MB|GB|TB|KiB|MiB|GiB|TiB)", args.memory_limit, re.I):
         raise ArgumentError("--memory-limit must be a positive size such as 512MB or 1GB")
+    if args.parts is not None and args.benchmark != "tpch":
+        raise ArgumentError("--parts is implemented for --benchmark tpch only")
     common = dict(
         command=args.command,
         benchmark=args.benchmark,
@@ -181,6 +207,7 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
         no_download=args.no_download,
         memory_limit=args.memory_limit,
         threads=args.threads,
+        parts=args.parts,
         timeout=args.timeout,
         quiet=args.quiet,
     )
@@ -201,6 +228,10 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
     redactor.add(token)
     if not uri:
         raise ArgumentError("load requires --catalog-uri or ICEBERG_URI")
+    if not 0 <= args.delete_fraction < 1:
+        raise ArgumentError("--delete-fraction must be at least 0 and below 1")
+    if args.delete_fraction and args.delete_mode == "equality" and args.benchmark != "tpch":
+        raise ArgumentError("--delete-mode equality is implemented for --benchmark tpch only")
     try:
         parsed = urlsplit(uri)
         _ = parsed.port
@@ -255,6 +286,9 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
         upload_buffer_mib=args.upload_buffer_mib,
         upload_workers=args.upload_workers,
         catalog_properties=properties,
+        delete_fraction=args.delete_fraction,
+        delete_mode=args.delete_mode,
+        delete_tables=tuple(name for name in args.delete_tables.split(",") if name),
     )
 
 

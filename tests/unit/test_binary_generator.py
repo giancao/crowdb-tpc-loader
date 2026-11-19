@@ -109,6 +109,8 @@ def test_command_has_partition_and_memory_boundaries(options):
     )
     assert command[:2] == ["/bin/tpchgen-cli", "parquet"]
     assert command[command.index("--parts") + 1] == "3"
+    explicit = build_command(Path("/bin/tpchgen-cli"), replace(options, parts=18), Path("/tmp/out"), "")
+    assert explicit[explicit.index("--parts") + 1] == "18"
     assert command[command.index("--num-threads") + 1] == "3"
     assert "--row-group-bytes" in command and "--no-progress" in command
     assert "/tmp/out with spaces" in command  # direct argv, no shell splitting
