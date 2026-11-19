@@ -1,6 +1,6 @@
 """Close delegated Arrow scan readers before PyIceberg closes their input file.
 
-PyIceberg 0.10's task uses Scanner.to_batches without closing its native reader
+PyIceberg's task uses Scanner.to_batches without closing its native reader
 when a row limit stops iteration. A Python-backed input can then receive a
 prefetch callback after close, retaining Python errors in Arrow worker futures
 until interpreter finalization. Keep the installed task's projection, filtering
@@ -75,7 +75,7 @@ def install_scan_lifecycle(fileio_type):
         return
     if (
         not isinstance(original, FunctionType)
-        or not Version("0.10") <= Version(version("pyiceberg")) < Version("0.11")
+        or not Version("0.11.1") <= Version(version("pyiceberg")) < Version("0.12")
         or not {"ds", "Scanner", "from_fragment", "to_batches"} <= set(original.__code__.co_names)
     ):
         raise CompatibilityError("PyIceberg scan task API changed; cannot safely manage delegated readers")

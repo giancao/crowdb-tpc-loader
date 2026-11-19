@@ -1,7 +1,7 @@
 # Candidate reproducibility matrix, NOT an already-tested dependency lock.
 # Install with --only-binary=:all: and run the real integration suite.
 pyarrow==22.0.0
-pyiceberg[pyarrow]==0.10.0
+pyiceberg[pyarrow]==0.11.1
 duckdb==1.5.6
 packaging==25.0
 sqlalchemy==2.0.43

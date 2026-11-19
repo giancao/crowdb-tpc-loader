@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from .backend import IcebergBackend
 from .errors import ArgumentError, ExistingTablesError, LoaderError
+from .field_ids import stamp_dataset
 from .generators import make_generator
 from .loader import load_tables
 from .models import Options
@@ -48,6 +49,7 @@ class Runner:
         validator: Callable = validate_dataset,
         prober: Callable | None = None,
         table_loader: Callable = load_tables,
+        stamper: Callable = stamp_dataset,
     ):
         self.options, self.emit, self.redactor = options, emit, redactor
         self.generator_factory, self.backend_factory = generator_factory, backend_factory
@@ -56,6 +58,7 @@ class Runner:
 
             prober = probe_fileio
         self.validator, self.prober, self.table_loader = validator, prober, table_loader
+        self.stamper = stamper
         self.report = RunReport(options, uuid.uuid4().hex, redactor)
         self.work: Path | None = None
         self.external_report: Path | None = None
@@ -160,6 +163,9 @@ class Runner:
                 report.data["generator"] = asdict(generated)
                 report.phase("validating")
                 tables = self.validator(output, options.benchmark, options.sf, generated, self.emit)
+                if backend is not None:
+                    # Uploads, checksums and --keep-files all use these final files.
+                    tables = self.stamper(tables, self.emit)
                 # No real benchmark table is created before the COMPLETE dataset passes validation.
                 for table in tables.values():
                     report.generated_table(table, self.work)

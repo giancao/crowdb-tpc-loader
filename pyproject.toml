@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crowdb-tpc-loader"
-version = "0.1.2"
+version = "0.1.3"
 description = "Generate TPC Parquet and synthetic samples for Iceberg, S3 and CROWDB Dataset injection"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -25,7 +25,7 @@ dependencies = [
   "requests>=2.32,<3",
   "pyarrow>=18,<24",
   "duckdb>=1.4,<1.6",
-  "pyiceberg[pyarrow]>=0.10,<0.11",
+  "pyiceberg[pyarrow]>=0.11.1,<0.12",
   "packaging>=24,<27",
 ]
 
@@ -63,3 +63,4 @@ select = ["E4", "E7", "E9", "F"]
 [tool.ruff.lint.per-file-ignores]
 "tests/integration/test_iceberg_http.py" = ["E402", "F811"]
 "tests/integration/test_parquet.py" = ["E402"]
+"tests/integration/test_field_ids.py" = ["E402"]

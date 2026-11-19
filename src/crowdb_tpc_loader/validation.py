@@ -52,8 +52,8 @@ def validate_schema(schema: Any, expected: tuple[Column, ...], table: str) -> No
         metadata = actual.metadata or {}
         if b"PARQUET:field_id" in metadata:
             raise ValidationError(
-                f"{table}.{actual.name}: generator file has Parquet field IDs; this release only imports "
-                "generator files without field IDs (PyIceberg add_files requirement)."
+                f"{table}.{actual.name}: generator file already has Parquet field IDs; the loader "
+                "writes the target table's field IDs itself."
             )
 
 

@@ -34,6 +34,7 @@ def make_runner(options, redactor, fake_backend, fake_generator_factory, make_da
         validator=validator,
         prober=probe,
         table_loader=table_loader,
+        stamper=lambda tables, emit: tables,
     )
     defaults.update(kwargs)
     return Runner(options, lambda message: None, redactor, **defaults)
@@ -53,6 +54,25 @@ def test_load_success_cleanup_parent_safe(options, redactor, fake_backend, fake_
     assert fake_backend.calls.index("probe") < fake_backend.calls.index("validate_dataset")
     assert fake_backend.calls.index("validate_dataset") < fake_backend.calls.index("create:region")
     assert "top-secret-credential" not in result.report_path.read_text()
+
+
+def test_field_ids_are_written_after_validation_and_only_for_load(
+    options, redactor, fake_backend, fake_generator_factory, make_data, tmp_path
+):
+    def stamper(tables, emit):
+        fake_backend.calls.append("field_ids")
+        return tables
+
+    runner = make_runner(options, redactor, fake_backend, fake_generator_factory, make_data, stamper=stamper)
+    assert runner.run().exit_code == 0
+    calls = fake_backend.calls
+    assert calls.index("validate_dataset") < calls.index("field_ids") < calls.index("create:region")
+
+    fake_backend.calls.clear()
+    generate = replace(options, command="generate", output_dir=tmp_path / "export", report_file=None)
+    runner = make_runner(generate, redactor, fake_backend, fake_generator_factory, make_data, stamper=stamper)
+    assert runner.run().exit_code == 0
+    assert "field_ids" not in fake_backend.calls
 
 
 def test_native_fileio_does_not_leave_undeletable_probe(
