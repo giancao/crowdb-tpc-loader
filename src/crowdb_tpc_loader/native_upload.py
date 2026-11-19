@@ -40,8 +40,25 @@ def new_upload_id() -> str:
     )
 
 
+# The catalog bounds one upload request to five minutes; a grant must outlive it.
+MIN_GRANT_MS = 360_000
+
+
+def renew_grant(properties, parsed) -> None:
+    """Replace a table grant that would expire during the next request. A table's files upload in turn."""
+    from .file_credentials import EXPIRY, REFRESH, FileCredentials
+
+    try:
+        remaining = int(properties[EXPIRY]) - time.time_ns() // 1_000_000
+    except (KeyError, TypeError, ValueError):
+        return
+    if remaining < MIN_GRANT_MS and properties.get(REFRESH):
+        properties.update(FileCredentials(properties, parsed.netloc).renew(parsed.netloc + parsed.path))
+
+
 def upload(properties, uri, path, size, buffer_size, progress):
     parsed = urlsplit(remote_uri(uri))
+    renew_grant(properties, parsed)
     segments = parsed.path.lstrip("/").split("/")
     if parsed.netloc != "iceberg" or len(segments) < 4:
         raise LoadError("Native injection requires the catalog's immutable Iceberg table path")

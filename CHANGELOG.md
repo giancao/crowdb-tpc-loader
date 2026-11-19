@@ -2,6 +2,7 @@
 
 ## 0.1.4
 
+- Add `--parts` to choose how many files TPC-H writes per large table.
 - Add `--delete-fraction`, `--delete-mode position|equality` and `--delete-tables` to `load`: write merge-on-read delete files in a second snapshot.
 
 ## 0.1.3

@@ -28,6 +28,7 @@ class _Grant:
     expires: int
     refresh_after: int
     prefix: str | None
+    properties: dict
 
 
 class FileCredentials:
@@ -55,7 +56,7 @@ class FileCredentials:
         remaining = max(0, expires - _now_ms())
         margin = min(60_000, remaining // 10)
         filesystem = PyArrowFileIO(dict(properties)).fs_by_scheme("s3", self.bucket)
-        return _Grant(filesystem, expires, expires - margin, prefix)
+        return _Grant(filesystem, expires, expires - margin, prefix, dict(properties))
 
     def resolve(self, path: str) -> _Grant:
         grant = self._grant
@@ -72,6 +73,11 @@ class FileCredentials:
         if grant.prefix is not None and not path.startswith(grant.prefix):
             raise PermissionError("Object is outside the refreshed table credential scope")
         return grant
+
+    def renew(self, path: str) -> dict:
+        """Fetch a new grant for `path` now and return its credential properties."""
+        self._grant = self._refresh(path)
+        return {key: self._grant.properties[key] for key in KEYS}
 
     def _refresh(self, path: str) -> _Grant:
         catalog = create_catalog("crowdb_file_credentials", self.timeout, self.properties, configured=True)

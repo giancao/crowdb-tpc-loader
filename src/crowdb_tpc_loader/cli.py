@@ -103,6 +103,12 @@ def build_parser(redactor: Redactor) -> SafeParser:
             "--threads", type=positive_int, default=2, help="native generator threads (default: 2)"
         )
         command.add_argument(
+            "--parts",
+            type=positive_int,
+            help="TPC-H files per large table (default: one per 10 scale-factor units); raise it "
+            "when a file exceeds the catalog's upload size or time limit",
+        )
+        command.add_argument(
             "--timeout",
             type=positive_timeout,
             default=60.0,
@@ -191,6 +197,8 @@ def build_parser(redactor: Redactor) -> SafeParser:
 def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
     if not re.fullmatch(r"[1-9][0-9]*(?:\.[0-9]+)?(?:KB|MB|GB|TB|KiB|MiB|GiB|TiB)", args.memory_limit, re.I):
         raise ArgumentError("--memory-limit must be a positive size such as 512MB or 1GB")
+    if args.parts is not None and args.benchmark != "tpch":
+        raise ArgumentError("--parts is implemented for --benchmark tpch only")
     common = dict(
         command=args.command,
         benchmark=args.benchmark,
@@ -200,6 +208,7 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
         no_download=args.no_download,
         memory_limit=args.memory_limit,
         threads=args.threads,
+        parts=args.parts,
         timeout=args.timeout,
         quiet=args.quiet,
     )
