@@ -158,7 +158,7 @@ class IcebergBackend:
         from .rest_catalog import create_catalog
 
         other.catalog = create_catalog(
-            "crowdb_tpc_loader", self.options.timeout, dict(self.catalog.properties), configured=True
+            "crowdb_tpc_loader", self.options.timeout, dict(self.catalog.properties), configured=self.catalog
         )
         other.probe_cleanup_supported = self.probe_cleanup_supported
         if self.staging is not None:

@@ -2,6 +2,7 @@
 
 ## 0.1.3
 
+- Fix REST catalog loads failing on PyIceberg 0.11 with `'BoundedRestCatalog' object has no attribute '_supported_endpoints'`.
 - Write the target table's field IDs into Parquet files before an Iceberg load; refuse to upload a file whose IDs differ from the created table.
 - Require PyIceberg 0.11.1 or later in the 0.11 series, whose `add_files` accepts files with field IDs.
 

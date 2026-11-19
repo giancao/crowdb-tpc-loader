@@ -1,6 +1,6 @@
 """Version-scoped REST client with finite request timeouts and no transport retries.
 
-PyIceberg 0.10's REST client has no portable documented timeout property. Wrap
+PyIceberg's REST client has no portable documented timeout property. Wrap
 only this catalog's sessions, never requests globally. Keep PyIceberg auth and
 signing adapters intact. This guarded extension point is integration-tested when
 PyIceberg is installed; --help does not import this module.
@@ -36,8 +36,9 @@ def bound_session(session: Any, timeout: float) -> Any:
     return session
 
 
-def create_catalog(name: str, timeout: float, properties: dict[str, Any], *, configured: bool = False):
-    from pyiceberg.catalog.rest import RestCatalog
+def create_catalog(name: str, timeout: float, properties: dict[str, Any], *, configured: Any = False):
+    """`configured` is a configured catalog to copy, or True for a session-only client."""
+    from pyiceberg.catalog.rest import DEFAULT_ENDPOINTS, DEFAULT_NAMESPACE_SEPARATOR, RestCatalog
 
     if not callable(getattr(RestCatalog, "_create_session", None)):
         raise CompatibilityError("PyIceberg REST session API changed; cannot safely apply request timeouts")
@@ -46,6 +47,12 @@ def create_catalog(name: str, timeout: float, properties: dict[str, Any], *, con
         def _fetch_config(self):
             if not configured:
                 super()._fetch_config()
+                return
+            # Negotiated state lives outside properties; reuse it without another /v1/config request.
+            self._supported_endpoints = set(getattr(configured, "_supported_endpoints", DEFAULT_ENDPOINTS))
+            self._namespace_separator = getattr(
+                configured, "_namespace_separator", DEFAULT_NAMESPACE_SEPARATOR
+            )
 
         def _create_session(self):
             return bound_session(super()._create_session(), timeout)
