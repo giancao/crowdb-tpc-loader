@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from .errors import CompatibilityError, ExistingTablesError, LoadError
+from .field_ids import schema_field_ids
 from .models import Options, TableData
 from .security import Redactor
 from .util import remote_uri
@@ -104,6 +105,13 @@ def schema_compatible(table: Any, data: TableData) -> None:
             raise CompatibilityError(
                 f"{data.name}.{left.name}: catalog strengthened a nullable column to required"
             )
+    file_ids = schema_field_ids(data.schema)
+    for field in table.schema().fields:
+        if file_ids.get(field.name) != field.field_id:
+            raise CompatibilityError(
+                f"{data.name}.{field.name}: Parquet field ID {file_ids.get(field.name)} differs from "
+                f"the table's field ID {field.field_id}; nothing was uploaded"
+            )
     if table.spec().fields:
         raise CompatibilityError("First-release benchmark tables must be unpartitioned")
 
@@ -121,9 +129,9 @@ class IcebergBackend:
             from .rest_catalog import create_catalog
 
             version = importlib.metadata.version("pyiceberg")
-            if not Version("0.10") <= Version(version) < Version("0.11"):
+            if not Version("0.11.1") <= Version(version) < Version("0.12"):
                 raise CompatibilityError(
-                    f"PyIceberg {version} is outside this release's 0.10.x adapter range"
+                    f"PyIceberg {version} is outside this release's 0.11.x adapter range"
                 )
             properties = {"py-io-impl": CROWDB_FILE_IO}
             properties.update(self.options.catalog_properties)

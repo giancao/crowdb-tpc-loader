@@ -15,6 +15,8 @@ pytest.importorskip("sqlalchemy")
 
 from pyiceberg.catalog.sql import SqlCatalog
 from crowdb_tpc_loader.backend import IcebergBackend, inspect_inventory
+from crowdb_tpc_loader.errors import LoadError
+from crowdb_tpc_loader.field_ids import schema_field_ids, stamp_dataset
 from crowdb_tpc_loader.loader import load_tables
 from crowdb_tpc_loader.models import ParquetPart, TableData
 from crowdb_tpc_loader.schemas import arrow_schema
@@ -53,6 +55,13 @@ def test_real_registration_and_independent_http_scan(options, report, redactor, 
     pq.write_table(source, path)
     data = TableData("region", (ParquetPart(path, 5, path.stat().st_size, schema),), schema)
     report.generated_table(data, tmp_path)
+    # A file without the table's field IDs is refused before any upload.
+    with pytest.raises(LoadError, match="field ID None"):
+        load_tables(backend, {"region": data}, report, 65536, lambda m: None)
+    assert not [name for name in server.objects if name.endswith(".parquet")]
+    catalog.drop_table((*options.namespace, "region"))
+    data = stamp_dataset({"region": data}, lambda m: None)["region"]
+    report.generated_table(data, tmp_path)
     load_tables(backend, {"region": data}, report, 65536, lambda m: None)
     assert report.table("region")["status"] == "succeeded"
     shutil.rmtree(local)
@@ -64,3 +73,7 @@ def test_real_registration_and_independent_http_scan(options, report, redactor, 
     actual = table.scan().to_arrow()
     assert actual.num_rows == 5
     assert actual["r_regionkey"].to_pylist() == [0, 1, 2, 3, 4]
+    # The registered file itself carries the table's field IDs.
+    with table.io.new_input(next(iter(state.files))).open() as stream:
+        registered = pq.read_metadata(stream).schema.to_arrow_schema()
+    assert schema_field_ids(registered) == {field.name: field.field_id for field in table.schema().fields}
