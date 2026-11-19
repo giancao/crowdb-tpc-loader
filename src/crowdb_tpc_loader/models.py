@@ -74,3 +74,6 @@ class Options:
     s3_prefix: str | None = None
     s3_properties: dict[str, str] = field(default_factory=dict, repr=False)
     verify: bool = False
+    delete_fraction: float = 0.0
+    delete_mode: str = "position"
+    delete_tables: tuple[str, ...] = ()

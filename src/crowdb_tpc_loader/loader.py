@@ -187,6 +187,24 @@ def _load_one(
         except Exception as exc:
             error = exc
         state = reconcile(backend, table, expected, row, checkpoint, error, emit)
+        options = getattr(backend, "options", None)
+        fraction = getattr(options, "delete_fraction", 0.0)
+        if fraction and (not options.delete_tables or name in options.delete_tables):
+            from .deletes import add_deletes
+
+            add_deletes(
+                table,
+                data,
+                list(expected),
+                options.delete_mode,
+                fraction,
+                run_id,
+                row,
+                checkpoint,
+                uploader,
+                buffer_size,
+                emit,
+            )
         row.update(
             status="succeeded",
             snapshot_id=state.snapshot_id,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Add `--delete-fraction`, `--delete-mode position|equality` and `--delete-tables` to `load`: write merge-on-read delete files in a second snapshot.
+
 ## 0.1.3
 
 - Fix REST catalog loads failing on PyIceberg 0.11 with `'BoundedRestCatalog' object has no attribute '_supported_endpoints'`.

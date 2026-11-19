@@ -132,6 +132,25 @@ def build_parser(redactor: Redactor) -> SafeParser:
             )
             command.add_argument("--on-exists", choices=("error", "skip"), default="error")
             command.add_argument(
+                "--delete-fraction",
+                type=float,
+                default=0.0,
+                help="after loading, delete about this fraction of each table's rows with "
+                "merge-on-read delete files in a second snapshot (0 < F < 1; default: no deletes)",
+            )
+            command.add_argument(
+                "--delete-mode",
+                choices=("position", "equality"),
+                default="position",
+                help="position: delete every Nth row by file position; equality: delete the rows "
+                "matching every Nth row's first-column value (default: position)",
+            )
+            command.add_argument(
+                "--delete-tables",
+                default="",
+                help="comma-separated tables that get delete files (default: all tables)",
+            )
+            command.add_argument(
                 "--work-dir",
                 type=Path,
                 help="staging PARENT; a unique child is created, never erase this parent",
@@ -201,6 +220,8 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
     redactor.add(token)
     if not uri:
         raise ArgumentError("load requires --catalog-uri or ICEBERG_URI")
+    if not 0 <= args.delete_fraction < 1:
+        raise ArgumentError("--delete-fraction must be at least 0 and below 1")
     try:
         parsed = urlsplit(uri)
         _ = parsed.port
@@ -255,6 +276,9 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
         upload_buffer_mib=args.upload_buffer_mib,
         upload_workers=args.upload_workers,
         catalog_properties=properties,
+        delete_fraction=args.delete_fraction,
+        delete_mode=args.delete_mode,
+        delete_tables=tuple(name for name in args.delete_tables.split(",") if name),
     )
 
 
