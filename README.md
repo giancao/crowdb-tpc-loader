@@ -34,7 +34,7 @@ Each table's files are registered in one snapshot. Required recovery records are
 
 After all tables are committed and verified, local staging is removed unless `--keep-files` is set. Failed and uncertain runs retain local files. Reports contain `md5`, `md5_duration_seconds`, `transfer_duration_seconds`, and the combined `upload_duration_seconds`. For non-S3 FileIO the checksum is calculated inline while copying, and separate checksum time is unavailable. Performance checks use SF=1; record generation, transfer and commit time separately.
 
-To test readers of merge-on-read deletes, add `--delete-fraction 0.1` to a load. Each table then gets a second snapshot with one delete file per data file. `--delete-mode position` (default) deletes every Nth row by file position; `--delete-mode equality` deletes the rows matching every Nth row's first-column value, so it removes more rows where that value repeats. `--delete-tables orders,lineitem` limits it to some tables. Tables are format-version 2; deletion vectors are not written because PyIceberg cannot write format-version 3. The delete commit is never retried.
+To test readers of merge-on-read deletes, add `--delete-fraction 0.1` to a load. Each table then gets a second snapshot with one delete file per data file. `--delete-mode position` (default) deletes every Nth row by file position; `--delete-mode equality` deletes every Nth row by its primary key (TPC-H only). `--delete-tables orders,lineitem` limits it to some tables. Tables are format-version 2; deletion vectors are not written because PyIceberg cannot write format-version 3. The delete commit is never retried.
 
 For local Parquet only, use `crowdb-tpc-loader generate --benchmark tpch --sf 1 --output-dir ./tpch-sf1`.
 

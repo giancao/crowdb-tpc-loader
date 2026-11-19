@@ -142,8 +142,8 @@ def build_parser(redactor: Redactor) -> SafeParser:
                 "--delete-mode",
                 choices=("position", "equality"),
                 default="position",
-                help="position: delete every Nth row by file position; equality: delete the rows "
-                "matching every Nth row's first-column value (default: position)",
+                help="position: delete every Nth row by file position; equality: delete every Nth "
+                "row by its primary key, TPC-H only (default: position)",
             )
             command.add_argument(
                 "--delete-tables",
@@ -222,6 +222,8 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
         raise ArgumentError("load requires --catalog-uri or ICEBERG_URI")
     if not 0 <= args.delete_fraction < 1:
         raise ArgumentError("--delete-fraction must be at least 0 and below 1")
+    if args.delete_fraction and args.delete_mode == "equality" and args.benchmark != "tpch":
+        raise ArgumentError("--delete-mode equality is implemented for --benchmark tpch only")
     try:
         parsed = urlsplit(uri)
         _ = parsed.port

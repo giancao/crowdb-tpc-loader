@@ -15,6 +15,17 @@ from .models import ParquetPart, TableData
 from .validation import require_arrow
 
 MODES = ("position", "equality")
+# Columns that identify one row. An equality delete on fewer columns removes every row sharing them.
+EQUALITY_KEYS = {
+    "region": ("r_regionkey",),
+    "nation": ("n_nationkey",),
+    "supplier": ("s_suppkey",),
+    "customer": ("c_custkey",),
+    "part": ("p_partkey",),
+    "partsupp": ("ps_partkey", "ps_suppkey"),
+    "orders": ("o_orderkey",),
+    "lineitem": ("l_orderkey", "l_linenumber"),
+}
 # Reserved field IDs of a position delete file (Iceberg spec, "Position Delete Files").
 FILE_PATH_ID, POS_ID = 2147483546, 2147483545
 
@@ -23,8 +34,10 @@ def _with_id(pa: Any, name: str, dtype: Any, field_id: int, nullable: bool) -> A
     return pa.field(name, dtype, nullable=nullable, metadata={FIELD_ID: str(field_id).encode()})
 
 
-def _delete_table(pa: Any, pq: Any, table: Any, part: ParquetPart, uri: str, mode: str, every: int):
-    """Rows to delete from one data file: every `every`-th row, by position or by first-column key."""
+def _delete_table(
+    pa: Any, pq: Any, table: Any, name: str, part: ParquetPart, uri: str, mode: str, every: int
+):
+    """Rows to delete from one data file: every `every`-th row, by position or by row key."""
     if mode == "position":
         positions = pa.array(range(0, part.rows, every), pa.int64())
         schema = pa.schema(
@@ -34,11 +47,13 @@ def _delete_table(pa: Any, pq: Any, table: Any, part: ParquetPart, uri: str, mod
             ]
         )
         return pa.table([pa.array([uri] * len(positions), pa.string()), positions], schema=schema), None
-    key = table.schema().fields[0]
-    column = pq.read_table(part.path, columns=[key.name]).column(0)
-    keys = column.take(pa.array(range(0, part.rows, every), pa.int64())).unique().drop_null()
-    schema = pa.schema([_with_id(pa, key.name, keys.type, key.field_id, True)])
-    return pa.table([keys], schema=schema), [key.field_id]
+    fields = [table.schema().find_field(column) for column in EQUALITY_KEYS[name]]
+    rows = pq.read_table(part.path, columns=[field.name for field in fields])
+    rows = rows.take(pa.array(range(0, part.rows, every), pa.int64()))
+    schema = pa.schema(
+        [_with_id(pa, f.name, rows.schema.field(f.name).type, f.field_id, True) for f in fields]
+    )
+    return pa.table(rows.columns, schema=schema), [field.field_id for field in fields]
 
 
 def add_deletes(
@@ -79,7 +94,7 @@ def add_deletes(
     for index, (part, uri) in enumerate(zip(data.parts, uris)):
         if part.rows == 0:
             continue
-        deletes, equality_ids = _delete_table(pa, pq, table, part, uri, mode, every)
+        deletes, equality_ids = _delete_table(pa, pq, table, data.name, part, uri, mode, every)
         local = part.path.with_name(f"{part.path.stem}.{mode}-deletes.parquet")
         pq.write_table(deletes, local)
         name = f"{data.name}/delete-{index:06d}"
