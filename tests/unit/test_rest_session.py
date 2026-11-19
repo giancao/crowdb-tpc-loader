@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+
+import pytest
 import requests
 
 from crowdb_tpc_loader.rest_catalog import bound_session
@@ -19,3 +22,22 @@ def test_bound_session_timeout_no_redirects_no_retries():
 
     assert session.headers["Authorization"] == "Bearer test-secret"
     assert session.adapters == original_adapters
+
+
+def test_configured_catalog_reuses_negotiated_state_without_a_request():
+    pytest.importorskip("pyiceberg")
+    from pyiceberg.catalog.rest import DEFAULT_ENDPOINTS, Capability
+
+    from crowdb_tpc_loader.rest_catalog import create_catalog
+
+    properties = {"uri": "http://127.0.0.1:9", "token": "test-secret"}
+    source = SimpleNamespace(_supported_endpoints={Capability.V1_CREATE_TABLE}, _namespace_separator=".")
+    # Port 9 is closed: a /v1/config request would fail here.
+    fork = create_catalog("fork", 1, properties, configured=source)
+    assert fork._supported_endpoints == {Capability.V1_CREATE_TABLE}
+    assert fork._supported_endpoints is not source._supported_endpoints
+    assert fork._namespace_separator == "."
+    fork._check_endpoint(Capability.V1_CREATE_TABLE)
+
+    session_only = create_catalog("session", 1, properties, configured=True)
+    assert session_only._supported_endpoints == set(DEFAULT_ENDPOINTS)
