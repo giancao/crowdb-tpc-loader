@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add `--delete-key-columns` and `--delete-keys-file` to `load`: in equality mode, delete one key set per table (every Nth distinct value of chosen columns, or the keys in a Parquet file) instead of every Nth row of each data file.
+- Add `--delete-commits`: load a table in rounds that alternate data and delete commits; each round deletes keys taken from its own data files.
+- Add `--delete-file-rows`: limit the rows per delete file of a key set (default 16,000,000). Reports list each round's snapshot IDs in `delete_rounds`.
+
 ## 0.1.4
 
 - Remove CrowDB native injection uploads. Data files always use the standard S3 upload path and keep the URI the loader chose; reports no longer carry `upload_uri`.

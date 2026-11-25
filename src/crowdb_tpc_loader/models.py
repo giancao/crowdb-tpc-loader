@@ -78,3 +78,7 @@ class Options:
     delete_fraction: float = 0.0
     delete_mode: str = "position"
     delete_tables: tuple[str, ...] = ()
+    delete_key_columns: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    delete_keys_files: dict[str, Path] = field(default_factory=dict)
+    delete_commits: int = 1
+    delete_file_rows: int = 16_000_000

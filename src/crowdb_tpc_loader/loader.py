@@ -45,14 +45,17 @@ def reconcile(
 ) -> Inventory:
     state = None
     last_error = None
+    # Delete files this run committed in earlier rounds are expected in the inventory.
+    deletes = {item["remote_uri"] for item in row.get("delete_files", ())}
+    own = (deletes,) if deletes else ()
     for attempt in range(3):
         if attempt:
             sleep(float(attempt))
         try:
             if attempt == 0 and original_error is None and hasattr(backend, "current_inventory"):
-                state = backend.current_inventory(table)
+                state = backend.current_inventory(table, *own)
             else:
-                _, state = backend.reload_inventory(table)
+                _, state = backend.reload_inventory(table, *own)
             verify_inventory(state, expected)
             for part in row["files"]:
                 if part.get("remote_uri") in expected:
@@ -76,6 +79,8 @@ def reconcile(
         uri = part.get("remote_uri")
         if uri in known:
             part["state"] = "registered"
+        elif part["state"] != "commit_unknown":
+            continue  # A file of another round; this commit did not touch it.
         elif rejected and state is not None:
             part["state"] = "uploaded_unregistered"
         else:
@@ -162,22 +167,44 @@ def _load_one(
             item["upload_duration_seconds"] = round(time.monotonic() - uploaded_at, 3)
             item["state"] = "uploaded_unregistered"
             checkpoint(row, None)
-        row["status"] = "committing"
-        for item in row["files"]:
-            item["state"] = "commit_unknown"
-        checkpoint(row, None)  # Persist uncertain state before add_files.
-        emit(f"Register {name}: {len(expected)} remote Parquet file(s)")
-        error = None
-        try:
-            backend.register(table, list(expected), run_id)
-        except Exception as exc:
-            error = exc
-        state = reconcile(backend, table, expected, row, checkpoint, error, emit)
-        options = getattr(backend, "options", None)
-        fraction = getattr(options, "delete_fraction", 0.0)
-        if fraction and (not options.delete_tables or name in options.delete_tables):
-            from .deletes import add_deletes
+        from .deletes import add_deletes, add_key_deletes, key_rounds
 
+        options = getattr(backend, "options", None)
+        # A table deleted by one key set interleaves data and delete commits: a delete only
+        # applies to data committed before it. Every other table registers its files once.
+        rounds = key_rounds(options, data)
+        uris = list(expected)
+        registered: dict[str, tuple[int, int]] = {}
+        row["status"] = "committing"
+        for indexes in rounds or [range(len(uris))]:
+            for index in indexes:
+                row["files"][index]["state"] = "commit_unknown"
+            checkpoint(row, None)  # Persist uncertain state before add_files.
+            batch = [uris[index] for index in indexes]
+            registered.update((uri, expected[uri]) for uri in batch)
+            emit(f"Register {name}: {len(batch)} remote Parquet file(s)")
+            error = None
+            try:
+                backend.register(table, batch, run_id)
+            except Exception as exc:
+                error = exc
+            state = reconcile(backend, table, registered, row, checkpoint, error, emit)
+            if rounds:
+                add_key_deletes(
+                    table,
+                    data,
+                    indexes,
+                    state.snapshot_id,
+                    options,
+                    run_id,
+                    row,
+                    checkpoint,
+                    uploader,
+                    buffer_size,
+                    emit,
+                )
+        fraction = getattr(options, "delete_fraction", 0.0)
+        if not rounds and fraction and (not options.delete_tables or name in options.delete_tables):
             add_deletes(
                 table,
                 data,

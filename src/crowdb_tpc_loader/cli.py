@@ -16,9 +16,11 @@ from typing import Sequence
 from urllib.parse import urlsplit
 
 from . import __version__
+from .deletes import keys_file_schema
 from .errors import ArgumentError
 from .models import Options
 from .runner import Runner
+from .schemas import arrow_schema, inventory
 from .security import Redactor, configure_logging
 from .util import format_bytes
 
@@ -156,6 +158,34 @@ def build_parser(redactor: Redactor) -> SafeParser:
                 help="comma-separated tables that get delete files (default: all tables)",
             )
             command.add_argument(
+                "--delete-key-columns",
+                default="",
+                metavar="TABLE=COL[+COL...][,TABLE=...]",
+                help="equality mode: delete every Nth distinct value of these columns, taken over the "
+                "whole table, so --delete-fraction is a fraction of distinct keys (default: primary key)",
+            )
+            command.add_argument(
+                "--delete-keys-file",
+                default="",
+                metavar="TABLE=PATH[,TABLE=...]",
+                help="equality mode: delete the keys in a Parquet file whose columns are the key "
+                "columns; such a table needs no --delete-fraction",
+            )
+            command.add_argument(
+                "--delete-commits",
+                type=positive_int,
+                default=1,
+                metavar="K",
+                help="equality mode: load a table in K rounds; each registers a share of its data "
+                "files, then deletes every Nth distinct key of those files (default: 1)",
+            )
+            command.add_argument(
+                "--delete-file-rows",
+                type=positive_int,
+                metavar="N",
+                help="maximum rows per delete file of a table deleted by a key set (default: 16000000)",
+            )
+            command.add_argument(
                 "--work-dir",
                 type=Path,
                 help="staging PARENT; a unique child is created, never erase this parent",
@@ -193,6 +223,68 @@ def build_parser(redactor: Redactor) -> SafeParser:
     return parser
 
 
+def _table_map(value: str, option: str, tables: dict) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for entry in filter(None, value.split(",")):
+        table, _, text = entry.partition("=")
+        if table not in tables or not text or table in result:
+            raise ArgumentError(f"{option} takes TABLE=VALUE entries, one per TPC-H table: {entry!r}")
+        result[table] = text
+    return result
+
+
+def delete_options(args: argparse.Namespace) -> dict:
+    """Validate the delete options together and return them as Options fields."""
+    if not 0 <= args.delete_fraction < 1:
+        raise ArgumentError("--delete-fraction must be at least 0 and below 1")
+    key_set = bool(args.delete_key_columns or args.delete_keys_file or args.delete_commits > 1)
+    if (key_set or args.delete_file_rows) and args.delete_mode != "equality":
+        raise ArgumentError(
+            "--delete-key-columns, --delete-keys-file, --delete-commits and --delete-file-rows "
+            "require --delete-mode equality"
+        )
+    if (args.delete_fraction or key_set) and args.delete_mode == "equality" and args.benchmark != "tpch":
+        raise ArgumentError("--delete-mode equality is implemented for --benchmark tpch only")
+    if args.delete_file_rows and not key_set:
+        raise ArgumentError(
+            "--delete-file-rows applies with --delete-key-columns, --delete-keys-file or --delete-commits"
+        )
+    tables = tuple(name for name in args.delete_tables.split(",") if name)
+    schema = inventory("tpch")
+    columns: dict[str, tuple[str, ...]] = {}
+    for table, text in _table_map(args.delete_key_columns, "--delete-key-columns", schema).items():
+        names = tuple(text.split("+"))
+        if len(set(names)) != len(names) or not set(names) <= {column.name for column in schema[table]}:
+            raise ArgumentError(f"--delete-key-columns {table}: unknown or repeated column in {text!r}")
+        columns[table] = names
+    files = {
+        table: Path(text).expanduser()
+        for table, text in _table_map(args.delete_keys_file, "--delete-keys-file", schema).items()
+    }
+    if set(columns) & set(files):
+        raise ArgumentError("A table takes either --delete-key-columns or --delete-keys-file, not both")
+    if tables and not {*columns, *files} <= set(tables):
+        raise ArgumentError("A table with delete keys is missing from --delete-tables")
+    if files and args.delete_commits > 1:
+        raise ArgumentError(
+            "--delete-keys-file cannot be combined with --delete-commits: a round deletes keys "
+            "taken from its own data files"
+        )
+    if (columns or args.delete_commits > 1) and not args.delete_fraction:
+        raise ArgumentError("--delete-key-columns and --delete-commits require --delete-fraction")
+    for table, path in files.items():
+        keys_file_schema(path, table, arrow_schema("tpch", table))
+    return dict(
+        delete_fraction=args.delete_fraction,
+        delete_mode=args.delete_mode,
+        delete_tables=tables,
+        delete_key_columns=columns,
+        delete_keys_files=files,
+        delete_commits=args.delete_commits,
+        delete_file_rows=args.delete_file_rows or 16_000_000,
+    )
+
+
 def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
     if not re.fullmatch(r"[1-9][0-9]*(?:\.[0-9]+)?(?:KB|MB|GB|TB|KiB|MiB|GiB|TiB)", args.memory_limit, re.I):
         raise ArgumentError("--memory-limit must be a positive size such as 512MB or 1GB")
@@ -228,10 +320,7 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
     redactor.add(token)
     if not uri:
         raise ArgumentError("load requires --catalog-uri or ICEBERG_URI")
-    if not 0 <= args.delete_fraction < 1:
-        raise ArgumentError("--delete-fraction must be at least 0 and below 1")
-    if args.delete_fraction and args.delete_mode == "equality" and args.benchmark != "tpch":
-        raise ArgumentError("--delete-mode equality is implemented for --benchmark tpch only")
+    deletes = delete_options(args)
     try:
         parsed = urlsplit(uri)
         _ = parsed.port
@@ -286,9 +375,7 @@ def to_options(args: argparse.Namespace, redactor: Redactor) -> Options:
         upload_buffer_mib=args.upload_buffer_mib,
         upload_workers=args.upload_workers,
         catalog_properties=properties,
-        delete_fraction=args.delete_fraction,
-        delete_mode=args.delete_mode,
-        delete_tables=tuple(name for name in args.delete_tables.split(",") if name),
+        **deletes,
     )
 
 

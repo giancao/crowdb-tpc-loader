@@ -9,7 +9,7 @@ from __future__ import annotations
 import importlib.metadata
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Collection
 from urllib.parse import unquote, urlsplit
 
 from .errors import CompatibilityError, ExistingTablesError, LoadError
@@ -68,17 +68,22 @@ def table_uuid(table: Any) -> str:
     return str(table.metadata.table_uuid)
 
 
-def inspect_inventory(table: Any) -> Inventory:
-    """Read live manifest entries, not a data scan: empty Parquet files must count too."""
+def inspect_inventory(table: Any, deletes: Collection[str] = ()) -> Inventory:
+    """Read live manifest entries, not a data scan: empty Parquet files must count too.
+
+    `deletes` names the delete files this run journaled; any other delete file is an error.
+    """
     snapshot = table.current_snapshot()
     files: dict[str, RemotePart] = {}
     if snapshot is not None:
         for manifest in snapshot.manifests(table.io):
             for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
                 item = entry.data_file
-                if int(item.content) != 0:
-                    raise LoadError("Unexpected delete file in a newly created unpartitioned benchmark table")
                 uri = str(item.file_path)
+                if int(item.content) != 0:
+                    if uri in deletes:
+                        continue
+                    raise LoadError("Unexpected delete file in a newly created unpartitioned benchmark table")
                 if uri in files:
                     raise LoadError("Duplicate data URI found in the current snapshot's live manifests")
                 files[uri] = RemotePart(uri, int(item.record_count), int(item.file_size_in_bytes))
@@ -286,18 +291,18 @@ class IcebergBackend:
             ) from exc
 
     @staticmethod
-    def current_inventory(table: Any) -> Inventory:
+    def current_inventory(table: Any, deletes: Collection[str] = ()) -> Inventory:
         # PyIceberg updates this metadata from the successful commit response.
-        return inspect_inventory(table)
+        return inspect_inventory(table, deletes)
 
-    def reload_inventory(self, table: Any) -> tuple[Any, Inventory]:
+    def reload_inventory(self, table: Any, deletes: Collection[str] = ()) -> tuple[Any, Inventory]:
         refreshed = self.catalog.load_table(table.name())
         self._learn(refreshed)
         if table_uuid(refreshed) != table_uuid(table):
             raise LoadError(
                 "Table identity changed concurrently; refusing to treat a replacement table as this run's table"
             )
-        return refreshed, inspect_inventory(refreshed)
+        return refreshed, inspect_inventory(refreshed, deletes)
 
     def register(self, table: Any, uris: list[str], run_id: str) -> None:
         for uri in uris:

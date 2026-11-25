@@ -4,7 +4,7 @@ For standalone S3, retain the report, run-directory owner marker and per-object 
 
 For Dataset, retain the immutable Dataset ID, operation ID, snapshot ID and upload IDs. Prepare can return a complete resource with `state=published` and `is_latest=false`; this does not prove latest advanced. A lost Publish reply is reconciled through a read-only status observation without replaying Publish. If the outcome remains unknown, local data and the report remain. `dataset verify <report>` checks immutable bytes and reports current `is_latest`; it never retries publication or claims to prove a historical head update. No automatic remote rollback or delete is performed.
 
-The tool does not provide automatic resume, overwrite, drop, purge, or remote garbage collection. There is no atomic transaction across all 8 or 24 tables. With concurrent table writes, each table uploads its files and commits one snapshot independently. An upload or commit failure in one table does not roll back successful snapshots in other tables.
+The tool does not provide automatic resume, overwrite, drop, purge, or remote garbage collection. There is no atomic transaction across all 8 or 24 tables. With concurrent table writes, each table uploads its files and commits one snapshot independently. An upload or commit failure in one table does not roll back successful snapshots in other tables. With `--delete-commits`, one table commits its data and delete files in several rounds: after a failure, files of earlier rounds stay `registered`, files of rounds not yet attempted stay `uploaded_unregistered`, and `delete_rounds` lists the completed rounds.
 
 ## Reports and directories
 

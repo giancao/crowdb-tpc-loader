@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 from threading import Barrier
 
@@ -189,6 +190,44 @@ def test_parallel_failure_keeps_other_table_result(report, make_data, fake_backe
     assert "register:nation" not in fake_backend.calls
 
 
+def test_ambiguous_round_is_not_retried_and_keeps_other_rounds_states(
+    report, options, make_data, fake_backend, tmp_path, monkeypatch
+):
+    from crowdb_tpc_loader import deletes
+    from crowdb_tpc_loader.models import ParquetPart, TableData
+
+    schema = make_data()["region"].schema
+    parts = []
+    for index in range(3):
+        path = tmp_path / f"part-{index}.parquet"
+        path.write_bytes(b"THIS IS TEST BYTES, NOT PARQUET")
+        parts.append(ParquetPart(path, 5, path.stat().st_size, schema))
+    data = {"region": TableData("region", tuple(parts), schema)}
+    seed(report, data, tmp_path)
+    fake_backend.options = replace(options, delete_mode="equality", delete_fraction=0.5, delete_commits=3)
+    monkeypatch.setattr(deletes, "add_key_deletes", lambda *args: None)
+    rounds, committed = [], {}
+
+    def register(table, uris, run_id):
+        rounds.append(uris)
+        if len(rounds) == 2:
+            raise TimeoutError("lost commit response")
+        committed.update({uri: RemotePart(uri, 5, parts[0].size_bytes) for uri in uris})
+        fake_backend.states["region"] = Inventory(len(rounds), dict(committed), "uuid-region")
+
+    fake_backend.register = register
+    with pytest.raises(CommitUncertainError):
+        run(report, data, fake_backend)
+    row = report.table("region")
+    assert [len(uris) for uris in rounds] == [1, 1]
+    assert [item["state"] for item in row["files"]] == [
+        "registered",
+        "commit_unknown",
+        "uploaded_unregistered",
+    ]
+    assert row["status"] == "uncertain"
+
+
 @pytest.mark.parametrize(
     "snapshot,files",
     [
@@ -218,6 +257,25 @@ def test_zero_row_file_counts_in_manifest():
     result = inspect_inventory(table)
     assert result.files["s3://b/empty.parquet"].rows == 0
     loader.verify_inventory(result, {"s3://b/empty.parquet": (0, 120)})
+
+
+def test_only_journaled_delete_files_are_accepted():
+    data = SimpleNamespace(content=0, file_path="s3://b/a", record_count=1, file_size_in_bytes=120)
+    delete = SimpleNamespace(content=2, file_path="s3://b/d", record_count=1, file_size_in_bytes=90)
+    manifest = SimpleNamespace(
+        fetch_manifest_entry=lambda io, discard_deleted: [
+            SimpleNamespace(data_file=data),
+            SimpleNamespace(data_file=delete),
+        ]
+    )
+    snapshot = SimpleNamespace(snapshot_id=7, manifests=lambda io: [manifest])
+    table = SimpleNamespace(
+        io=object(), current_snapshot=lambda: snapshot, metadata=SimpleNamespace(table_uuid="u")
+    )
+    assert set(inspect_inventory(table, {"s3://b/d"}).files) == {"s3://b/a"}
+    for journaled in ((), {"s3://b/other"}):
+        with pytest.raises(LoadError, match="Unexpected delete file"):
+            inspect_inventory(table, journaled)
 
 
 def test_duplicate_manifest_path_is_rejected():
